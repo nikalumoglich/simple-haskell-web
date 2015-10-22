@@ -1,0 +1,98 @@
+<meta charset="UTF-8">
+<script type="text/javascript">
+var xmlhttp;
+xmlhttp=new XMLHttpRequest();
+
+xmlhttp.onreadystatechange=function()
+  {
+  if (xmlhttp.readyState==4 && xmlhttp.status==200)
+    {
+    document.getElementById("RES").innerHTML=xmlhttp.responseText;
+    }
+  };
+var i;
+doCalc = function(){
+	xmlhttp.open("GET","./cgi-bin/binary?text="+document.getElementById("text").value,true);
+	xmlhttp.send();
+};
+</script>
+
+<html>
+<body>
+<h1>Haskell Text to Binary</h1><br>
+
+<table border="1">
+<tr><td>Text</td><td><input type="text" name="text" id="text"></td></tr>
+</table>
+<br>
+<div id="RES"></div>
+<br>
+<input type="button" value="Do it" onClick="doCalc();">
+
+<br>
+<br>
+Continuando com meus estudos de Haskell, resolvi escrever uma simples aplicação web, principalmente para verificar a viabilidade e a praticidade envolvida.<br>
+Este programa consiste num conversor de texto para binário (que também é um texto). O código HTML está todo contido nesta página.<br><br>
+
+Primeiro tive que descobrir como utilizar programas compilados com o Apache, o que foi bastante simples (<a href="http://httpd.apache.org/docs/current/howto/cgi.html">http://httpd.apache.org/docs/current/howto/cgi.html</a>). No caso de uma requisição <b>GET</b>, a entrada vem truncada numa variável de ambiente chamada <b>QUERY_STRING</b><br><br>
+
+A parte mais interessante envolveu tratar a entrada, para isso escrevi um módulo chamado <b>Web</b>, que atualmente consiste de 3 funções:<br>
+<ol>
+<li><b>wordsWhen</b>: Uma das funções nativas do Haskell é a <b>words</b>, que divide uma string em uma lista, utilizando os espaços como caracteres delimitadores. Com base na definição desta função, escrevi uma que aceita comparações arbitrárias. Bastou substituir todas as ocorrências de <b>==' '</b> por uma função <b>p</b>.</li>
+<li><b>parseGet</b>: Recebe uma string no formato <b>(variável=valor&#38;outravariável=outrovalor&#38;...)</b> e retorna uma lista de tuplas no formato <b>[(variável, valor), (outravariável, outrovalor)]</b></li>
+<li><b>valueByKey</b>: Recebe uma string e uma lista no formato gerado pela função anterior, e devolve o segundo valor da tupla cujo primeiro valor corresponde ao da string do parâmetro.</li>
+</ol>
+
+<br>
+O código:<br>
+<pre>
+--Web.hs
+module Web where
+
+import Data.List
+
+wordsWhen     :: (Char -> Bool) -> String -> [String]
+wordsWhen p s =  case dropWhile p s of
+                      "" -> []
+                      s' -> w : wordsWhen p s''
+                            where (w, s'') = break p s'
+
+parseGet :: String -> [(String, String)]
+parseGet i = map (parseSingleEntry) (wordsWhen (=='&') i) where
+        parseSingleEntry j = ((wordsWhen (=='=') j)!!0, (wordsWhen (=='=') j)!!1)
+
+valueByKey key xs = snd ((filter (\x -> fst x == key) xs)!!0)
+</pre>
+<br>
+<br>
+O código do programa em si consiste de:
+
+<ol>
+<li><b>textToBin</b>: A função itera por todos os caracteres de uma string, e os substitui por strings de 8 caracteres que representam o valor binário</li>
+<li><b>main</b>: A primeira linha obtém o valor contido na variável de sistema <b>QUERY_STRING</b>, nas linhas subsequentes a entrada e parseada, a informação pertinente é extraída e o resultado é jogado na saída padrão. O detalhe que merece atenção aqui é a primeira linha jogada na saída padrão (<b>"Content-type: text/html\n\n"</b>), também seguindo a recomendação da documentação do Apache </li>
+</ol>
+<br>
+<br>
+O código:<br>
+<pre>
+--binary.hs
+import System.Environment
+import Data.Char
+import Numeric
+import Web
+
+textToBin t = concat $ map (charToBin) (map ord t) where
+        charToBin x = fillZeros $ showIntAtBase 2 intToDigit x "" where
+                fillZeros k | length k &#62; 7 = k
+        		| otherwise = fillZeros (['0']++k)
+
+main = do
+        e <- getEnv "QUERY_STRING"
+        let entrada = parseGet e
+        let text = valueByKey "text" entrada
+        putStrLn "Content-type: text/html\n\n"
+        putStrLn $ textToBin text
+</pre>
+
+</body>
+</html>
